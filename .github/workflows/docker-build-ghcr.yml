@@ -1,10 +1,10 @@
 name: Build & Push Public Image to GHCR (Any Tag)
 
 on:
-  push:
-    # 核心修改：使用 '*' 匹配所有推送的 tag，不再限制必须以 'v' 开头
-    tags:
-      - '*' 
+#  push:
+#    # 核心修改：使用 '*' 匹配所有推送的 tag，不再限制必须以 'v' 开头
+#    tags:
+#      - '*' 
   workflow_dispatch:
     inputs:
       image_tag:
