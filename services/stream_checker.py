@@ -9,7 +9,6 @@ import tempfile
 import json
 from datetime import datetime, timedelta
 from sqlmodel import Session, select
-from static_ffmpeg import run
 from task_broker import broker, update_task_status, notifier
 from models import TaskRecord
 
@@ -63,19 +62,6 @@ class StreamChecker:
                 return cls._ffmpeg_path
             except Exception as e:
                 print(f"DEBUG: 系统 FFmpeg ({sys_ffmpeg}) 运行失败: {e}")
-
-        # 2. 尝试 static-ffmpeg 下载的二进制
-        try:
-            static_ffmpeg = run.get_or_fetch_platform_executables_else_raise()[0]
-            try:
-                subprocess.run([static_ffmpeg, "-version"], capture_output=True, timeout=2)
-                cls._ffmpeg_path = static_ffmpeg
-                print(f"DEBUG: 使用 static-ffmpeg 二进制: {static_ffmpeg}")
-                return cls._ffmpeg_path
-            except Exception as e:
-                print(f"DEBUG: static-ffmpeg 二进制 ({static_ffmpeg}) 运行失败: {e}")
-        except Exception as e:
-            print(f"DEBUG: 获取 static-ffmpeg 二进制失败: {e}")
 
         # 最后兜底
         cls._ffmpeg_path = "ffmpeg"
