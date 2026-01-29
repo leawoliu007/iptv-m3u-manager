@@ -1,37 +1,41 @@
-FROM python:3.10-slim-bullseye
+# 第一阶段：编译阶段 (Builder)
+FROM python:3.10-alpine AS builder
 
 WORKDIR /app
-# Force the virtualenv path
-ENV PATH="/app/venv/bin:$PATH" \
-    PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ffmpeg \
-    git \
-    libglib2.0-0 \
-    # Added for potential C-extension compilation on armv7
+# 安装编译依赖
+RUN apk add --no-cache \
     gcc \
+    g++ \
+    musl-dev \
     python3-dev \
-    && apt-get clean && rm -rf /var/lib/apt/lists/*
+    libffi-dev \
+    linux-headers
 
-# Create virtual environment
-RUN python -m venv /app/venv
+# 创建虚拟环境并安装依赖
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
 
-# Install Python requirements
 COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
-# Copy project code
+# 第二阶段：运行阶段 (Final)
+FROM python:3.10-alpine
+
+WORKDIR /app
+
+# 只安装运行时必需的库 (FFmpeg)
+RUN apk add --no-cache ffmpeg libstdc++
+
+# 从编译阶段拷贝安装好的 Python 环境
+COPY --from=builder /opt/venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH" \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+# 拷贝项目代码
 COPY . .
 
-# Ensure entrypoint is executable (if you have one)
-# If you don't have entrypoint.sh, comment out the line below and change ENTRYPOINT to CMD
-RUN chmod +x entrypoint.sh || true
-
-EXPOSE 8000
-
-# Using uvicorn to start the FastAPI app
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+EXPOSE 18000
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "18000"]
