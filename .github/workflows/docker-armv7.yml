@@ -1,11 +1,11 @@
 name: Build & Push to GHCR + Local Export
 
 on:
-  push:
-    branches:
-      - 'docker-armv7'
-    tags:
-      - '*' 
+#  push:
+#    branches:
+#      - 'docker-armv7'
+#    tags:
+#      - '*' 
   workflow_dispatch:
     inputs:
       image_tag:
