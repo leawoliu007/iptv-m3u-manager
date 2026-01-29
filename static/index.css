@@ -1,6 +1,17 @@
 /* ============================================================
    任务中心 / 通知中心 (NAS 风格)
    ============================================================ */
+/* 鼠标悬停在订阅选项上时背景微亮 */
+.sub-checkbox-item:hover {
+    background: rgba(99, 102, 241, 0.1) !important;
+    border-radius: 6px;
+}
+
+/* 选中状态的文字高亮 */
+.sub-checkbox-item:has(input:checked) span {
+    color: var(--primary);
+    font-weight: bold;
+}
 
 /* 顶部通知图标容器 */
 .navbar-tools {
@@ -2069,4 +2080,9 @@ textarea {
 .mobile-channel-card__toggle-btn:active {
     transform: scale(0.97);
     box-shadow: none;
+}
+
+/* 强制隐藏类，优先级高于原本的 flex !important */
+.sub-item-hidden {
+    display: none !important;
 }

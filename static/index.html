@@ -163,6 +163,11 @@
                                 onclick="toggleAllSubs(0)">反选</button>
                         </div>
                     </div>
+                    <div class="form-group" style="margin-bottom: 8px;">
+                        <input type="text" id="sub_source_search" placeholder="🔍 搜索订阅源名称..."
+                               oninput="filterSubSources()"
+                               style="width: 100%; padding: 8px 12px; font-size: 0.85em; height: 32px; border: 1px solid var(--glass-border); background: var(--input-bg); border-radius: 6px; outline: none;">
+                    </div>
                     <div id="sub_selector" class="sub-selector-list">正在获取订阅...</div>
                 </div>
 
@@ -1213,6 +1218,27 @@
             }
         }
 
+        function filterSubSources() {
+            const searchInput = document.getElementById('sub_source_search');
+            if (!searchInput) return;
+
+            const query = searchInput.value.toLowerCase().trim();
+            const items = document.querySelectorAll('#sub_selector .sub-checkbox-item');
+
+            items.forEach(item => {
+                const textElement = item.querySelector('span');
+                if (textElement) {
+                    const text = textElement.innerText.toLowerCase();
+                    // 如果不匹配，添加隐藏类；如果匹配，移除隐藏类
+                    if (text.includes(query)) {
+                        item.classList.remove('sub-item-hidden');
+                    } else {
+                        item.classList.add('sub-item-hidden');
+                    }
+                }
+            });
+        }
+
         // 移动端卡片点击处理
         function handleMobileCardClick(event, id) {
             // 如果点击的是按钮、复选框或图片，则不处理
@@ -1712,14 +1738,23 @@
                 }
             });
 
+        // 聚合页面的订阅选择 (仅显示启用的)
             const selector = document.getElementById('sub_selector');
+            const searchInput = document.getElementById('sub_source_search'); // 获取搜索框
+
             if (selector) {
+                // 1. 渲染列表
                 selector.innerHTML = data.filter(s => s.is_enabled).map(s => `
                     <label class="sub-checkbox-item">
                         <input type="checkbox" name="selected_subs" value="${s.id}" onchange="debounceUpdatePreview()">
-                        <span>${s.name || s.url}</span>
+                        <span>${(s.name || s.url).replace(/'/g, "\\'")}</span>
                     </label>
                 `).join('') || (data.length > 0 ? '所有订阅均已禁用' : '请先添加订阅源');
+
+                // 2. 关键修复：延迟执行过滤，确保 DOM 已经插入完成
+                setTimeout(() => {
+                    filterSubSources();
+                }, 50);
             }
         }
 
@@ -2731,11 +2766,24 @@ function removeTag(val) {
         }
 
         function toggleAllSubs(mode) {
-            const checkboxes = document.querySelectorAll('input[name="selected_subs"]');
-            checkboxes.forEach(cb => {
-                if (mode === 1) cb.checked = true;
-                else cb.checked = !cb.checked;
+            // 获取所有订阅源的 label 容器
+            const items = document.querySelectorAll('#sub_selector .sub-checkbox-item');
+
+            items.forEach(item => {
+                // 核心逻辑：只操作当前显示的（没有被搜索过滤隐藏的）
+                if (!item.classList.contains('sub-item-hidden')) {
+                    const checkbox = item.querySelector('input[name="selected_subs"]');
+                    if (checkbox) {
+                        if (mode === 1) {
+                            checkbox.checked = true; // 全选可见
+                        } else {
+                            checkbox.checked = !checkbox.checked; // 反选可见
+                        }
+                    }
+                }
             });
+
+            // 触发预览更新
             debounceUpdatePreview();
         }
 
