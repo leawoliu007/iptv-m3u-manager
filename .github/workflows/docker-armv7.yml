@@ -1,6 +1,11 @@
-name: Build Local ARMv7 Image
+name: Build & Push to GHCR + Local Export
 
 on:
+  push:
+    branches:
+      - 'docker-armv7'
+    tags:
+      - '*' 
   workflow_dispatch:
     inputs:
       image_tag:
@@ -8,24 +13,42 @@ on:
         required: true
         default: 'latest'
 
+# 必须设置权限才能推送到 GHCR
+permissions:
+  contents: read
+  packages: write
+
 jobs:
-  build-local:
+  build-and-push:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # 1. 修正后的元数据提取逻辑
+      # 1. 登录到 GitHub Container Registry (GHCR)
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # 2. 提取元数据并处理用户名小写（GHCR 要求全小写）
       - name: Set Image Metadata
         id: meta
         run: |
+          # 转换用户名为小写
+          REPO_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          IMAGE_NAME="iptv-m3u-manager"
+          FULL_IMAGE="ghcr.io/$REPO_OWNER/$IMAGE_NAME"
+
           if [[ "${{ github.event_name }}" == "push" ]]; then
-            # 使用 sed 过滤掉 refs/heads/ 或 refs/tags/ 前缀
-            # 并将斜杠 / 替换为横杠 - (防止分支名带斜杠报错)
             CLEAN_TAG=$(echo "${GITHUB_REF#refs/*/}" | sed 's/\//-/g')
           else
             CLEAN_TAG="${{ github.event.inputs.image_tag }}"
           fi
+          
+          echo "full_image=$FULL_IMAGE" >> $GITHUB_OUTPUT
           echo "tag=$CLEAN_TAG" >> $GITHUB_OUTPUT
 
       - name: Set up QEMU
@@ -34,17 +57,29 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # 2. 构建并导出
-      - name: Build and Export armv7
+      # 3. 构建并推送到 GHCR (多架构支持 amd64 和 arm/v7)
+      - name: Build and push to GHCR
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64,linux/arm/v7
+          tags: |
+            ${{ steps.meta.outputs.full_image }}:${{ steps.meta.outputs.tag }}
+            ${{ steps.meta.outputs.full_image }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # 4. 同时构建并导出本地离线 tar 包 (仅 arm/v7)
+      - name: Build and Export armv7 Tar
         uses: docker/build-push-action@v5
         with:
           context: .
           push: false
           platforms: linux/arm/v7
+          # 本地 tar 内部的镜像标签
           tags: iptv-m3u-manager:${{ steps.meta.outputs.tag }}
           outputs: type=docker,dest=./iptv-m3u-manager-armv7.tar
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
