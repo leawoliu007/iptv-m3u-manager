@@ -1664,7 +1664,6 @@
             const res = await fetch('/subscriptions/');
             const data = await res.json();
 
-            // 渲染订阅管理列表
             const list = document.getElementById('sub_list');
             list.innerHTML = data.map(s => {
                 const statusColor = s.last_update_status && (s.last_update_status.includes('失败') || s.last_update_status.includes('Error')) ? '#ef4444' : '#10b981';
@@ -1672,16 +1671,25 @@
                 const toggleText = s.is_enabled ? '禁用' : '启用';
                 const toggleColor = s.is_enabled ? '#f59e0b' : '#10b981';
 
+                // 依然保留转义，确保按钮可用
+                const safeName = (s.name || "").replace(/'/g, "\\'");
+                const safeUrl = (s.url || "").replace(/'/g, "\\'");
+
                 return `
                 <div id="sub_item_${s.id}" class="sub-item" style="margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--glass-border); padding-bottom: 8px; opacity: ${opacity};">
-                    <div style="cursor: pointer; flex-grow: 1;" onclick="viewChannels(${s.id}, '${(s.name || s.url).replace(/'/g, "\\'")}', '${s.epg_url || ''}')">
-                        <strong style="color: ${s.name ? 'inherit' : '#94a3b8'};">${s.name || '未命名订阅 (' + s.url.substring(0, 20) + '...)'}</strong>
+                    <div style="cursor: pointer; flex-grow: 1;" onclick="viewChannels(${s.id}, '${safeName}', '${s.epg_url || ''}')">
+                        <strong style="color: ${s.name ? 'inherit' : '#94a3b8'};">${s.name || '未命名订阅'}</strong>
                         ${!s.is_enabled ? '<span style="background: #64748b; color: white; padding: 2px 6px; border-radius: 4px; font-size: 0.7em; margin-left: 8px;">已禁用</span>' : ''}
                         ${s.epg_url ? '<span style="background: #8b5cf6; color: white; padding: 2px 6px; border-radius: 4px; font-size: 0.7em; margin-left: 8px;">EPG</span>' : ''}
                         <br>
                         <small style="opacity: 0.6;">${s.url.substring(0, 50)}...</small>
+
+                        <div id="sub_stats_${s.id}" style="font-size: 0.8em; margin-top: 6px; display: flex; gap: 10px; opacity: 0.9;">
+                            <span style="color: var(--text-muted);">📊 正在统计...</span>
+                        </div>
+
                         <div style="font-size: 0.8em; margin-top: 4px; opacity: 0.8;">
-                            📅 ${formatDate(s.last_updated)} 
+                            📅 ${formatDate(s.last_updated)}
                             <span style="color: ${statusColor}; margin-left: 8px;">
                                 ${s.last_update_status || '等待更新'}
                             </span>
@@ -1689,22 +1697,30 @@
                     </div>
                     <div style="display: flex; gap: 8px;">
                         <button class="btn btn-sm" style="background: ${toggleColor};" onclick="toggleSubActive(${s.id}, ${s.is_enabled})">${toggleText}</button>
-                        <button class="btn btn-sm" style="background: var(--primary);" onclick="prepareEditSub(${s.id}, '${(s.name || "").replace(/'/g, "\\'")}', '${s.url}', '${s.user_agent}', ${s.auto_update_minutes || 0}, ${s.is_enabled})">修改</button>
+                        <button class="btn btn-sm" style="background: var(--primary);" onclick="prepareEditSub(${s.id}, '${safeName}', '${safeUrl}', '${s.user_agent}', ${s.auto_update_minutes || 0}, ${s.is_enabled})">修改</button>
                         <button class="btn btn-sm" style="background: #10b981;" onclick="refreshSub(${s.id})">刷新</button>
-                        <button class="btn btn-sm" style="background: #3b82f6;" onclick="viewChannels(${s.id}, '${(s.name || s.url).replace(/'/g, "\\'")}', '${s.epg_url || ''}')">查看</button>
+                        <button class="btn btn-sm" style="background: #3b82f6;" onclick="viewChannels(${s.id}, '${safeName}', '${s.epg_url || ''}')">查看</button>
                         <button class="btn btn-sm" style="background: #ef4444;" onclick="deleteSub(${s.id})">删除</button>
                     </div>
                 </div>
             `}).join('') || '暂无订阅';
 
-            // 聚合页面的订阅选择 (仅显示启用的)
+            // 修改重点：DOM 渲染后，遍历数据调用你保留的统计函数
+            data.forEach(s => {
+                if (typeof updateSubCardStats === 'function') {
+                    updateSubCardStats(s.id);
+                }
+            });
+
             const selector = document.getElementById('sub_selector');
-            selector.innerHTML = data.filter(s => s.is_enabled).map(s => `
-                <label class="sub-checkbox-item">
-                    <input type="checkbox" name="selected_subs" value="${s.id}" onchange="debounceUpdatePreview()">
-                    <span>${s.name || s.url}</span>
-                </label>
-            `).join('') || (data.length > 0 ? '所有订阅均已禁用' : '请先添加订阅源');
+            if (selector) {
+                selector.innerHTML = data.filter(s => s.is_enabled).map(s => `
+                    <label class="sub-checkbox-item">
+                        <input type="checkbox" name="selected_subs" value="${s.id}" onchange="debounceUpdatePreview()">
+                        <span>${s.name || s.url}</span>
+                    </label>
+                `).join('') || (data.length > 0 ? '所有订阅均已禁用' : '请先添加订阅源');
+            }
         }
 
         window._subLastScrollY = 0;
@@ -3403,6 +3419,32 @@ function removeTag(val) {
                 const allSelected = filteredChannels.length > 0 && filteredChannels.every(c => window.selectedChannelIds.has(c.id));
                 master.checked = allSelected;
                 master.indeterminate = selected > 0 && !allSelected;
+            }
+        }
+
+        async function updateSubCardStats(subId) {
+            const statsEl = document.getElementById(`sub_stats_${subId}`);
+            if (!statsEl) return;
+
+            try {
+                const res = await fetch(`/subscriptions/${subId}/channels`);
+                const channels = await res.json();
+
+                // 核心计算逻辑
+                const total = channels.length;
+                const enabledCount = channels.filter(c => c.is_enabled !== false).length;
+                const disabledCount = total - enabledCount;
+
+                // 微调文案：增加间距和对比度，保持与 updatePreviewStats 风格统一
+                statsEl.innerHTML = `
+                    <span style="color: var(--primary);">📊 <strong>${total}</strong> 总计</span>
+                    <span style="color: var(--success); margin-left: 8px;">✅ <strong>${enabledCount}</strong> 启用</span>
+                    <span style="color: var(--danger); margin-left: 8px;">❌ <strong>${disabledCount}</strong> 禁用</span>
+                `;
+            } catch (err) {
+                // 错误处理文案
+                statsEl.innerHTML = `<span style="color: var(--danger); font-size: 0.85em; opacity: 0.7;">⚠️ 无法获取频道数据</span>`;
+                console.error(`Subscription ${subId} stats error:`, err);
             }
         }
 
