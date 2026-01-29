@@ -1,0 +1,54 @@
+name: Build Local ARMv7 Image
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: '手动指定镜像标签'
+        required: true
+        default: 'latest'
+
+jobs:
+  build-local:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 1. 修正后的元数据提取逻辑
+      - name: Set Image Metadata
+        id: meta
+        run: |
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            # 使用 sed 过滤掉 refs/heads/ 或 refs/tags/ 前缀
+            # 并将斜杠 / 替换为横杠 - (防止分支名带斜杠报错)
+            CLEAN_TAG=$(echo "${GITHUB_REF#refs/*/}" | sed 's/\//-/g')
+          else
+            CLEAN_TAG="${{ github.event.inputs.image_tag }}"
+          fi
+          echo "tag=$CLEAN_TAG" >> $GITHUB_OUTPUT
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # 2. 构建并导出
+      - name: Build and Export armv7
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: false
+          platforms: linux/arm/v7
+          tags: iptv-m3u-manager:${{ steps.meta.outputs.tag }}
+          outputs: type=docker,dest=./iptv-m3u-manager-armv7.tar
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: iptv-image-${{ steps.meta.outputs.tag }}
+          path: ./iptv-m3u-manager-armv7.tar
+          retention-days: 7
