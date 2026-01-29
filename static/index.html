@@ -1395,9 +1395,10 @@
         }
 
         async function checkPageConnectivity() {
-            // 确定检测目标
+            // 1. 确定检测目标
             let targetChannels = [];
             if (window.selectedChannelIds.size > 0) {
+                // 仅检测用户勾选的频道
                 targetChannels = filteredChannels.filter(c => window.selectedChannelIds.has(c.id));
             } else {
                 alert("请先勾选需要操作的频道！");
@@ -1406,22 +1407,24 @@
 
             if (targetChannels.length === 0) return;
 
-            const confirmMsg = `即将检测选中的 ${targetChannels.length} 个频道的连通性 (耗时较长)，确定继续吗？`;
+            // 2. 获取“根据结果自动启用/禁用”复选框的状态
+            const autoToggle = document.getElementById('auto_disable_check').checked;
+
+            const confirmMsg = `即将检测选中的 ${targetChannels.length} 个频道的连通性，确定继续吗？`;
             if (targetChannels.length > 500 && !confirm(confirmMsg)) return;
 
-            // 标记检测中
+            // 3. 标记检测中状态，便于 UI 渲染加载动画
             targetChannels.forEach(c => c.checking = true);
 
-            // 立即渲染加载动画
+            // 初始渲染一次，显示“检测中”文字
             renderOffset = 0;
             document.getElementById('channel_list_container').scrollTop = 0;
             renderBaseTable(document.getElementById('channel_list'), window.lastRenderShowActions);
 
-            // 分批处理 (每批 50)
+            // 4. 分批处理 (每批 50 个)，避免后端请求堆积
             const chunkSize = 50;
             for (let i = 0; i < targetChannels.length; i += chunkSize) {
                 const chunk = targetChannels.slice(i, i + chunkSize);
-                // 发送带 ID 的列表
                 const items = chunk.map(c => ({ id: c.id, url: c.url }));
 
                 try {
@@ -1432,23 +1435,52 @@
                     });
                     const results = await res.json();
 
-                    results.forEach(r => {
-                        // 简单通过 URL 匹配
-                        chunk.filter(c => c.url === r.url).forEach(c => {
-                            c.checking = false;
-                            c.status = r.status;
-                            c.latency = r.latency;
-                            c.error = r.error;
-                        });
-                    });
+                    // 5. 处理检测结果并执行自动切换逻辑
+                    for (const r of results) {
+                        const match = chunk.find(c => c.url === r.url);
+                        if (match) {
+                            match.checking = false;
+                            match.status = r.status;   // 连通性布尔值
+                            match.latency = r.latency; // 延迟毫秒数
+                            match.error = r.error;
+
+                            // 核心逻辑：如果开启了自动处理
+                            if (autoToggle) {
+                                const isCurrentlyEnabled = match.is_enabled !== false;
+
+                                // 状态不一致时执行切换：
+                                // 如果状态是连通(true)但当前被禁用 -> 启用
+                                // 如果状态是不连通(false)但当前已启用 -> 禁用
+                                if (r.status !== isCurrentlyEnabled) {
+                                    try {
+                                        const toggleRes = await fetch(`/channels/${match.id}/toggle`, { method: 'POST' });
+                                        if (toggleRes.ok) {
+                                            const updated = await toggleRes.json();
+                                            match.is_enabled = updated.is_enabled; // 同步本地内存中的状态
+                                        }
+                                    } catch (e) {
+                                        console.error(`自动切换频道 ${match.id} 状态失败:`, e);
+                                    }
+                                }
+                            }
+                        }
+                    }
 
                 } catch (err) {
-                    console.error("Check failed for batch", err);
+                    console.error("批量检测请求失败:", err);
                     chunk.forEach(c => { c.checking = false; c.error = "Check Failed"; });
                 }
 
+                // 每完成一批次，重绘表格以反馈实时进度
                 renderOffset = 0;
                 renderBaseTable(document.getElementById('channel_list'), window.lastRenderShowActions);
+            }
+
+            // 6. 完成提示
+            if (autoToggle) {
+                showToast("快速检测完成，已根据连通性自动同步频道状态", "success");
+            } else {
+                showToast("快速检测完成", "info");
             }
         }
 
