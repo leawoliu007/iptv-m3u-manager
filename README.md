@@ -39,6 +39,17 @@ docker run -d \
 > **注意**：
 > - Windows PowerShell 用户请将 `$(pwd)` 替换为 `${PWD}`
 > - 数据文件将保存在当前目录下的 `data/` 文件夹中。
+>
+指定数据库
+```bash
+docker run -d \
+  --name iptv-manager \
+  --restart always \
+  --network host \
+  -v $(pwd)/database.db:/app/database.db \
+  -e TZ=Asia/Shanghai \
+  iptv-m3u-manager:0129
+```
 
 #### 方案二：Docker Compose 部署（便于管理）
 创建一个 `docker-compose.yml` 文件，写入以下内容：
