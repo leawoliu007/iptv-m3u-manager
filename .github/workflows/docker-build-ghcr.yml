@@ -2,8 +2,12 @@ name: Build Local ARMv7 Image
 
 on:
   push:
+    # 核心修改：确保包含你的分支名
+    branches:
+      - 'docker-armv7'
     tags:
       - '*' 
+  # 允许手动触发，方便在 Actions 页面直接运行
   workflow_dispatch:
     inputs:
       image_tag:
